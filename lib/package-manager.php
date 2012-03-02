@@ -190,6 +190,11 @@ class Version {
 			++$ia;
 			++$ib;
 		}
+		// Check version segments length
+		if($ia != count($parts_a))
+			return 1;
+		if($ib != count($parts_b))
+			return -1;
 		// Epoch and versions are the same - check releases
 		if($a->release == 0 && $b->release == 0)
 			return 0;

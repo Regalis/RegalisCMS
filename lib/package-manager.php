@@ -23,8 +23,8 @@
 */
 namespace RegalisCMS\Pacman;
 
-//! Package manager exception
-class PEception extends \Exception {}
+//! Pacman exception
+class PacmanException extends \Exception {}
 
 //! Package manager main class
 class Pacman {
@@ -35,7 +35,7 @@ class Pacman {
 	//! Constructor - checks for phar PHP extension
 	public function __construct() {
 		if(!extension_loaded('phar')) 
-			throw new PException(_("Unable to find PHP extension named PHAR. Contact your system administrator"));
+			throw new PacmanException(_("Unable to find PHP extension named PHAR. Contact your system administrator"));
 	}
 
 	/** Get path relative to root directory
@@ -55,7 +55,7 @@ class Pacman {
 	* @param path absolute PHAR path
 	* @param archive relative archive path
 	*/
-	public function realPath($path, $archive) {
+	public static function realPath($path, $archive) {
 		$start = strpos($path, basename($archive)."/");
 		if($start !== false)
 			return substr($path, $start + strlen(basename($archive)) + 1);
@@ -67,7 +67,7 @@ class Pacman {
 	*/
 	public function setRoot($root) {
 		if(!is_dir($root))
-			throw new PException(sprintf(_("%s is not a directory or does not exists"), $root));
+			throw new PacmanException(sprintf(_("%s is not a directory or does not exists"), $root));
 		$this->root = $root;
 	}
 }
@@ -117,6 +117,7 @@ class Version {
 			$this->release = substr($this->version, $pos + 1);
 			$this->version = substr($this->version, 0, $pos);
 		}
+		return true;
 	}
 	
 	//! Version object is empty?
@@ -207,9 +208,12 @@ class Version {
 	}
 }
 
-class PackageInfo {
+//! Exception class for Package
+class PackageException extends \Exception {}
+
+class Package {
 	public /*string*/ $name;
-	public /*string*/ $version;
+	public /*Version*/ $version;
 	public /*string*/ $description;
 	public /*array*/ $depends;
 	public /*array*/ $opt_depends;
@@ -218,6 +222,76 @@ class PackageInfo {
 	public /*string*/ $license;
 	public /*long int*/ $size;
 	public /*array*/ $replaces;
+	public /*array*/ $conflicts;
+
+	/** Read package archive and fill all variables
+	* @param file_path absolute or relative path to archive file
+	* @throws PackageException
+	*/
+	public function readInfo($file_path) {
+		try {
+			$archive = new \PharData($file_path);
+			if(!isset($archive[".PKGINFO"]))
+				throw new PackageException(sprintf(_("Unable to find file .PKGINFO in archive %s."), $file_path));
+			$pkg_info = parse_ini_file($archive[".PKGINFO"]);
+			$this->resetInfo();
+			foreach($pkg_info as $key => $value) {
+				switch($key) {
+					case "name":
+						$this->name = $value;
+					break;
+					case "version": {
+						$this->version = new Version();
+						if(!$this->version->parse($value))
+							throw new PackageException(sprintf(_("Bad version string in archive %s."), $file_path));
+					}
+					break;
+					case "description":
+						$this->description = $value;
+					break;
+					case "depends": 
+						$this->depends = explode(";", $value);
+					break;
+					case "optdepends":
+						$this->opt_depends = explode(";", $value);
+					break;
+					case "provides":
+						$this->privides = explode(";", $value);
+					break;
+					case "author":
+						$this->author = $value;
+					break;
+					case "license":
+						$this->license = $value;
+					break;
+					case "size":
+						$this->size = intval($value);
+					break;
+					case "replaces":
+						$this->replaces = explode(";", $value);
+					break;
+					case "conflicts":
+						$this->conflicts = explode(";", $value);
+					break;
+				}
+			}
+			if($this->name == null || $this->version == null)
+				throw new PackageException(sprintf(_("Missing name or/and version in archive %s."), $file_path));
+		} catch(\UnexpectedValueException $e) {
+			throw new PackageException(sprintf(_("Unable to open archive file %s"), $file_path));
+		}
+	}
+
+	/** Reset all package info
+	* Set all public variables to NULL
+	*/
+	public function resetInfo() {
+		$vars = \get_object_vars($this);
+		foreach($vars as $var => $value) {
+			$this->$var = null;
+		}
+	}
+
 }
 
 ?>

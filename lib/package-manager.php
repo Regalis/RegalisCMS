@@ -26,10 +26,12 @@ namespace RegalisCMS\Pacman;
 //! Pacman exception
 class PacmanException extends \Exception {}
 
+//TODO: Support for remote repositories
 //! Package manager main class
 class Pacman {
 	private $root = "./"; //!< root directory
 	private $db_path = "var/lib/pacman/"; //!< database directory
+	private $cache_path = "var/cache/pacman/pkg/"; //!< cache directory
 	private $logger = null; //!< logger instance
 
 	//! Constructor - checks for phar PHP extension
@@ -70,8 +72,19 @@ class Pacman {
 			throw new PacmanException(sprintf(_("%s is not a directory or does not exists"), $root));
 		$this->root = $root;
 	}
+
+	/** Check if package exists
+	* Checking is performed starting from cache directory, then the remote repository is browsed.
+	* @param package Package object to check
+	* @return true if package is available, false otherwise
+	*/
+	public function packageExists(Package $package) {
+		return(file_exists($this->root . $this->cache_path . $package->name . "-" . $package->version . ".tar"));
+		//TODO: Browse remote repository
+	}
 }
 
+//! Simple class for version manipulations
 class Version {
 	public $epoch = 0;
 	public $version = '0.0';
@@ -183,7 +196,13 @@ class Version {
 				return -1;
 			if(intval(substr($parts_a[$ia], 0, $int_a)) > intval(substr($parts_b[$ib], 0, $int_b)))
 				return 1;
-			$cmp = strcmp(substr($parts_a[$ia], $int_a), substr($parts_b[$ib], $int_b));
+			$postfix_a = substr($parts_a[$ia], $int_a);
+			$postfix_b = substr($parts_b[$ib], $int_b);
+			if(empty($postfix_a) && !empty($postfix_b))
+				return 1;
+			else if(empty($postfix_b) && !empty($postfix_a))
+				return -1;
+			$cmp = strcmp($postfix_a, $postfix_b);
 			if($cmp < 0)
 				return -1;
 			if($cmp > 0)
@@ -211,6 +230,7 @@ class Version {
 //! Exception class for Package
 class PackageException extends \Exception {}
 
+//! Class to represent package
 class Package {
 	public /*string*/ $name;
 	public /*Version*/ $version;
@@ -223,6 +243,16 @@ class Package {
 	public /*long int*/ $size;
 	public /*array*/ $replaces;
 	public /*array*/ $conflicts;
+	
+	/** Constructor - cleans all public variables
+	* @param name package name
+	* @param version package Version
+	*/
+	public function __construct($name = null, Version $version = null) {
+		$this->resetInfo();
+		$this->name = $name;
+		$this->version = $version;
+	}
 
 	/** Read package archive and fill all variables
 	* @param file_path absolute or relative path to archive file
@@ -290,6 +320,42 @@ class Package {
 		foreach($vars as $var => $value) {
 			$this->$var = null;
 		}
+	}
+
+}
+
+//! Pacman transaction
+class Transaction {
+	const INSTALL = 0x01;
+	const UPGRADE = 0x02;
+	const REMOVE = 0x04;
+	const REINSTALL = 0x08;
+	const HOLD = 0x10;
+
+	private $transaction = array(); //!< Transaction array
+	
+	public function install(Package $package) {
+		$this->setState($package, INSTALL);
+	}
+
+	public function reinstall(Package $package) {
+		$this->setState($package, REINSTALL);
+	}
+
+	public function upgrade(Package $package) {
+		$this->setState($package, UPGRADE);
+	}
+
+	public function remove(Package $package) {
+		$this->setState($package, REMOVE);
+	}
+
+	public function hold(Package $package) {
+		$this->setState($package, HOLD);
+	}
+
+	private function setState(Package $package, $state) {
+		$this->transaction[sprintf("%s-%s", $package->name, $package->version)] = $state;
 	}
 
 }

@@ -243,6 +243,9 @@ class Package {
 	public /*long int*/ $size;
 	public /*array*/ $replaces;
 	public /*array*/ $conflicts;
+	public /*string*/ $native_language;
+	public /*array*/ $supported_languages;
+	public /*string*/ $changelog;
 	
 	/** Constructor - cleans all public variables
 	* @param name package name
@@ -280,13 +283,13 @@ class Package {
 						$this->description = $value;
 					break;
 					case "depends": 
-						$this->depends = explode(";", $value);
+						$this->depends = explode(",", $value);
 					break;
 					case "optdepends":
-						$this->opt_depends = explode(";", $value);
+						$this->opt_depends = explode(",", $value);
 					break;
 					case "provides":
-						$this->privides = explode(";", $value);
+						$this->privides = explode(",", $value);
 					break;
 					case "author":
 						$this->author = $value;
@@ -298,15 +301,24 @@ class Package {
 						$this->size = intval($value);
 					break;
 					case "replaces":
-						$this->replaces = explode(";", $value);
+						$this->replaces = explode(",", $value);
 					break;
 					case "conflicts":
-						$this->conflicts = explode(";", $value);
+						$this->conflicts = explode(",", $value);
+					break;
+					case "native_language":
+						$this->native_language = $value;
+					break;
+					case "supported_languages":
+						$this->supported_languages = explode(",", $value);
 					break;
 				}
 			}
 			if($this->name == null || $this->version == null)
 				throw new PackageException(sprintf(_("Missing name or/and version in archive %s."), $file_path));
+			if(isset($archive[".CHANGELOG"])) {
+				$this->changelog = file_get_contents($archive[".CHANGELOG"]);
+			}
 		} catch(\UnexpectedValueException $e) {
 			throw new PackageException(sprintf(_("Unable to open archive file %s"), $file_path));
 		}
@@ -357,6 +369,33 @@ class Transaction {
 	private function setState(Package $package, $state) {
 		$this->transaction[sprintf("%s-%s", $package->name, $package->version)] = $state;
 	}
+
+}
+
+
+interface Index {
+	/** Search index for matching string
+	* @param name package name
+	* @return array of Package objects (only name and version parametrs is set)
+	*/
+	public function search($name);
+
+	/** Search index for matching string (detailed version of search())
+	* @param name package name
+	* @return array of Package objects (detailed)
+	*/
+	public function searchDetailed($name);
+
+	/** Refresh index
+	* @return void
+	*/
+	public function refresh();
+
+	/** Get list of package contents
+	* @param package Package object or package name
+	* @return array of package contents or null if no matching package
+	*/
+	public function listContents($package);
 
 }
 

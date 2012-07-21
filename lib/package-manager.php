@@ -25,18 +25,20 @@ namespace RegalisCMS\Pacman;
 
 //! Pacman exception
 class PacmanException extends \Exception {}
+class PacmanPackageNotFound  extends PacmanException {}
+class PacmanInvalidPackage extends PacmanException {}
 
 //TODO: Support for remote repositories
 //! Package manager main class
 class Pacman {
-	private $root = "./"; //!< root directory
-	private $db_path = "var/lib/pacman/"; //!< database directory
-	private $cache_path = "var/cache/pacman/pkg/"; //!< cache directory
-	private $logger = null; //!< logger instance
+	protected $root = "./"; //!< root directory
+	protected $db_path = "./var/lib/pacman/"; //!< database directory
+	protected $cache_path = "./var/cache/pacman/pkg/"; //!< cache directory
+	protected $logger = null; //!< logger instance
 
 	//! Constructor - checks for phar PHP extension
 	public function __construct() {
-		if(!extension_loaded('phar')) 
+		if (!extension_loaded('phar')) 
 			throw new PacmanException(_("Unable to find PHP extension named PHAR. Contact your system administrator"));
 	}
 
@@ -44,7 +46,7 @@ class Pacman {
 	* @param path relative path
 	* @return absolute path
 	*/
-	private function path($path) {
+	protected function path($path) {
 		return $this->root . "/" . $path;
 	}
 
@@ -59,7 +61,7 @@ class Pacman {
 	*/
 	public static function realPath($path, $archive) {
 		$start = strpos($path, basename($archive)."/");
-		if($start !== false)
+		if ($start !== false)
 			return substr($path, $start + strlen(basename($archive)) + 1);
 		return false;
 	}
@@ -68,7 +70,7 @@ class Pacman {
 	* @param root new root directory
 	*/
 	public function setRoot($root) {
-		if(!is_dir($root))
+		if (!is_dir($root))
 			throw new PacmanException(sprintf(_("%s is not a directory or does not exists"), $root));
 		$this->root = $root;
 	}
@@ -79,9 +81,48 @@ class Pacman {
 	* @return true if package is available, false otherwise
 	*/
 	public function packageExists(Package $package) {
-		return(file_exists($this->root . $this->cache_path . $package->name . "-" . $package->version . ".tar"));
+		return(file_exists($this->cache_path . $package->name . "-" . $package->version . ".tar"));
 		//TODO: Browse remote repository
 	}
+
+}
+
+class DatabaseException extends \Exception {}
+
+//! Pacman database
+class Database {
+	protected $root;
+
+	/** Default constructor, init database
+	* @param root database directory root
+	* @throws DatabaseException if root directory is useless
+	*/
+	public function __construct($root = './var/lib/pacman') {
+		if (!is_dir($root) || !is_writable($root))
+			throw new DatabaseException(sprintf(_("%s is not writable or does not exists"), $root));
+		$this->root = $root;
+		foreach (array($root . '/local', $root . '/sync') as $dir) {
+			if (!is_dir($dir)) {
+				mkdir($dir, 0700);
+				if (!is_writable($dir))
+					chmod($dir, 0770);
+				//TODO: if directory is still not writable, we must stop here
+			}
+		}
+	}
+
+	/** Check if package is already installed
+	* @param package Package object (name and version is required)
+	* @return true if package is installer, false otherwise
+	*/
+	public function isInstalled(Package $package) {
+		if (!is_dir($this->root . "/local/" . $package->name))
+			return false;
+		$local_package = new Package();
+		$local_package->readInfo($this->root . "/local/" . $package->name);
+		return (strcmp($package, $local_package) == 0);
+	}
+
 }
 
 //! Simple class for version manipulations
@@ -114,7 +155,7 @@ class Version {
 	*/
 	public function parse($str) {
 		$pos = strpos($str, ':');
-		if($pos == false) {
+		if ($pos == false) {
 			$this->epoch = 0;
 			$pos = -1;
 		}
@@ -122,10 +163,10 @@ class Version {
 			$this->epoch = substr($str, 0, $pos);
 		$this->version = substr($str, $pos + 1);
 		$pos = strpos($this->version, '-');
-		if($pos === false)
+		if ($pos === false)
 			$this->release = 0;
 		else {
-			if($pos == 0)
+			if ($pos == 0)
 				return false;
 			$this->release = substr($this->version, $pos + 1);
 			$this->version = substr($this->version, 0, $pos);
@@ -161,66 +202,66 @@ class Version {
 	*/
 	public static function compare(Version $a, Version $b) {
 		// Simple check
-		if($a->isNull() && $b->isNull())
+		if ($a->isNull() && $b->isNull())
 			return 0;
-		if($a->isNull())
+		if ($a->isNull())
 			return -1;
-		if($b->isNull())
+		if ($b->isNull())
 			return 1;
 		// Maybe versions are equal?
-		if(strcmp((string)$a, (string)$b) == 0)
+		if (strcmp((string)$a, (string)$b) == 0)
 			return 0;
 		// We must check all segments
-		if($a->epoch < $b->epoch)
+		if ($a->epoch < $b->epoch)
 			return -1;
-		if($a->epoch > $b->epoch)
+		if ($a->epoch > $b->epoch)
 			return 1;
 		$parts_a = explode('.', $a->version);
 		$ia = 0;
 		$parts_b = explode('.', $b->version);
 		$ib = 0;
-		while($ia < count($parts_a) && $ib < count($parts_b)) {
-			if(ctype_digit($parts_a[$ia]) && ctype_digit($parts_b[$ib])) {
-				if(intval($parts_a[$ia]) < intval($parts_b[$ib])) {
+		while ($ia < count($parts_a) && $ib < count($parts_b)) {
+			if (ctype_digit($parts_a[$ia]) && ctype_digit($parts_b[$ib])) {
+				if (intval($parts_a[$ia]) < intval($parts_b[$ib])) {
 					return -1;
 				}
-				if(intval($parts_a[$ia]) > intval($parts_b[$ib])) {
+				if (intval($parts_a[$ia]) > intval($parts_b[$ib])) {
 					return 1;
 				}
 			}
 			$int_a = 0;
 			$int_b = 0;
-			while($int_a < strlen($parts_a[$ia]) && ctype_digit($parts_a[$ia][$int_a])) ++$int_a;
-			while($int_b < strlen($parts_b[$ib]) && ctype_digit($parts_b[$ib][$int_b])) ++$int_b;
-			if(intval(substr($parts_a[$ia], 0, $int_a)) < intval(substr($parts_b[$ib], 0, $int_b)))
+			while ($int_a < strlen($parts_a[$ia]) && ctype_digit($parts_a[$ia][$int_a])) ++$int_a;
+			while ($int_b < strlen($parts_b[$ib]) && ctype_digit($parts_b[$ib][$int_b])) ++$int_b;
+			if (intval(substr($parts_a[$ia], 0, $int_a)) < intval(substr($parts_b[$ib], 0, $int_b)))
 				return -1;
-			if(intval(substr($parts_a[$ia], 0, $int_a)) > intval(substr($parts_b[$ib], 0, $int_b)))
+			if (intval(substr($parts_a[$ia], 0, $int_a)) > intval(substr($parts_b[$ib], 0, $int_b)))
 				return 1;
 			$postfix_a = substr($parts_a[$ia], $int_a);
 			$postfix_b = substr($parts_b[$ib], $int_b);
-			if(empty($postfix_a) && !empty($postfix_b))
+			if (empty($postfix_a) && !empty($postfix_b))
 				return 1;
-			else if(empty($postfix_b) && !empty($postfix_a))
+			else if (empty($postfix_b) && !empty($postfix_a))
 				return -1;
 			$cmp = strcmp($postfix_a, $postfix_b);
-			if($cmp < 0)
+			if ($cmp < 0)
 				return -1;
-			if($cmp > 0)
+			if ($cmp > 0)
 				return 1;
 			++$ia;
 			++$ib;
 		}
 		// Check version segments length
-		if($ia != count($parts_a))
+		if ($ia != count($parts_a))
 			return 1;
-		if($ib != count($parts_b))
+		if ($ib != count($parts_b))
 			return -1;
 		// Epoch and versions are the same - check releases
-		if($a->release == 0 && $b->release == 0)
+		if ($a->release == 0 && $b->release == 0)
 			return 0;
-		if(($a->release == 0 && $b->release != 0) || ($a->release < $b->release))
+		if (($a->release == 0 && $b->release != 0) || ($a->release < $b->release))
 			return -1;
-		if(($a->release != 0 && $b->release == 0) || ($a->release > $b->release))
+		if (($a->release != 0 && $b->release == 0) || ($a->release > $b->release))
 			return 1; 
 		// Safeguard
 		return 0;
@@ -257,66 +298,78 @@ class Package {
 		$this->version = $version;
 	}
 
+	/** Read PKGINFO file and fill all variables
+	* @param file_path absolute or relative path to PKGINFO file
+	* @throws PackageException if file is not readable or no name or
+	* verison infromations was provided
+	*/
+	public function readInfo($pkginfo_file) {
+		if (!is_readable($pkginfo_file))
+			throw new PacmanException(sprintf(_("Unable to read file: %s"), $pkginfo_file));
+		$pkg_info = parse_ini_file($pkginfo_file);
+		$this->resetInfo();
+		foreach ($pkg_info as $key => $value) {
+			switch ($key) {
+				case "name":
+					$this->name = $value;
+				break;
+				case "version": {
+					$this->version = new Version();
+					if (!$this->version->parse($value))
+						throw new PackageException(sprintf(_("Bad version string in archive %s."), $file_path));
+				}
+				break;
+				case "description":
+					$this->description = $value;
+				break;
+				case "depends":
+					$this->depends = explode(",", $value);
+				break;
+				case "optdepends":
+					$this->opt_depends = explode(",", $value);
+				break;
+				case "provides":
+					$this->privides = explode(",", $value);
+				break;
+				case "author":
+					$this->author = $value;
+				break;
+				case "license":
+					$this->license = $value;
+				break;
+				case "size":
+					$this->size = intval($value);
+				break;
+				case "replaces":
+					$this->replaces = explode(",", $value);
+				break;
+				case "conflicts":
+					$this->conflicts = explode(",", $value);
+				break;
+				case "native_language":
+					$this->native_language = $value;
+				break;
+				case "supported_languages":
+					$this->supported_languages = explode(",", $value);
+				break;
+			}
+		}
+		if ($this->name == null || $this->version == null)
+			throw new PackageException(sprintf(_("Missing name or/and version in archive %s."), $file_path));
+	}
+
 	/** Read package archive and fill all variables
 	* @param file_path absolute or relative path to archive file
-	* @throws PackageException
+	* @throws PackageException if .PKGINFO file does not exists
+	* for more reasons, see readInfo()
 	*/
-	public function readInfo($file_path) {
+	public function readPackageInfo($file_path) {
 		try {
 			$archive = new \PharData($file_path);
-			if(!isset($archive[".PKGINFO"]))
+			if (!isset($archive[".PKGINFO"]))
 				throw new PackageException(sprintf(_("Unable to find file .PKGINFO in archive %s."), $file_path));
-			$pkg_info = parse_ini_file($archive[".PKGINFO"]);
-			$this->resetInfo();
-			foreach($pkg_info as $key => $value) {
-				switch($key) {
-					case "name":
-						$this->name = $value;
-					break;
-					case "version": {
-						$this->version = new Version();
-						if(!$this->version->parse($value))
-							throw new PackageException(sprintf(_("Bad version string in archive %s."), $file_path));
-					}
-					break;
-					case "description":
-						$this->description = $value;
-					break;
-					case "depends": 
-						$this->depends = explode(",", $value);
-					break;
-					case "optdepends":
-						$this->opt_depends = explode(",", $value);
-					break;
-					case "provides":
-						$this->privides = explode(",", $value);
-					break;
-					case "author":
-						$this->author = $value;
-					break;
-					case "license":
-						$this->license = $value;
-					break;
-					case "size":
-						$this->size = intval($value);
-					break;
-					case "replaces":
-						$this->replaces = explode(",", $value);
-					break;
-					case "conflicts":
-						$this->conflicts = explode(",", $value);
-					break;
-					case "native_language":
-						$this->native_language = $value;
-					break;
-					case "supported_languages":
-						$this->supported_languages = explode(",", $value);
-					break;
-				}
-			}
-			if($this->name == null || $this->version == null)
-				throw new PackageException(sprintf(_("Missing name or/and version in archive %s."), $file_path));
-			if(isset($archive[".CHANGELOG"])) {
+			$this->readInfo($archive[".PKGINFO"]);
+			if (isset($archive[".CHANGELOG"])) {
 				$this->changelog = file_get_contents($archive[".CHANGELOG"]);
 			}
 		} catch(\UnexpectedValueException $e) {
@@ -329,9 +382,13 @@ class Package {
 	*/
 	public function resetInfo() {
 		$vars = \get_object_vars($this);
-		foreach($vars as $var => $value) {
+		foreach ($vars as $var => $value) {
 			$this->$var = null;
 		}
+	}
+
+	public function __toString() {
+		return $this->name . '-' . $this->version;
 	}
 
 }
@@ -344,7 +401,7 @@ class Transaction {
 	const REINSTALL = 0x08;
 	const HOLD = 0x10;
 
-	private $transaction = array(); //!< Transaction array
+	protected $transaction = array(); //!< Transaction array
 	
 	public function install(Package $package) {
 		$this->setState($package, INSTALL);
@@ -366,12 +423,11 @@ class Transaction {
 		$this->setState($package, HOLD);
 	}
 
-	private function setState(Package $package, $state) {
+	protected function setState(Package $package, $state) {
 		$this->transaction[sprintf("%s-%s", $package->name, $package->version)] = $state;
 	}
 
 }
-
 
 interface Index {
 	/** Search index for matching string

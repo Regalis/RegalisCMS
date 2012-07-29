@@ -21,7 +21,7 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 * 
 */
-namespace RegalisCMS\Pacman;
+namespace Regalis\Pacman;
 
 //! Pacman exception
 class PacmanException extends \Exception {}
@@ -113,7 +113,7 @@ class Database {
 
 	/** Check if package is already installed
 	* @param package Package object (name and version is required)
-	* @return true if package is installer, false otherwise
+	* @return true if package is installed, false otherwise
 	*/
 	public function isInstalled(Package $package) {
 		if (!is_dir($this->root . "/local/" . $package->name))

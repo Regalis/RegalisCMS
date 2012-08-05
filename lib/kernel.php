@@ -111,6 +111,113 @@ class Kernel {
 	private $signals = array();
 }
 
+/** Signal base exception */
+class SignalException extends \Exception {}
+
+/** Signal representation */
+class Signal {
+	
+	public function __construct($name) {
+		$this->arguments = array();
+		$this->parseName($name);
+		print_r($this);
+	}
+
+	public function bindListener(&$listener, $slot) {
+		if (!method_exists($listener, $slot))
+			throw new SignalException(sprintf(_('Unable to bind listener "%s" to signal "%s": slot "%s" does not exists'), get_class($listener), $this->name, $slot));
+		array_push($this->listeners, array($listener, $slot));
+	}
+
+	private function parseName($name) {
+		if (strpos($name, '(') === false) {
+			$this->name = trim($name);
+			return;
+		}
+		$signal = explode('(', $name);		
+		$this->name = $signal[0];
+		$args_end = strpos($signal[1], ')');
+		if ($args_end === false)
+			throw new SignalException(sprintf(_('Error while parsing signal name, closing bracket for arguments list not found in "%s"'), $name));
+		$args = explode(',', substr($signal[1], 0, $args_end));
+		foreach ($args as $arg) {
+			$arg = trim($arg);
+			if (strpos($arg, ' ') === false) {
+				array_push($this->arguments, new SignalArgument(null, $arg));
+				continue;
+			}
+			$arg_parts = explode(' ', $arg);
+			array_push($this->arguments, new SignalArgument($arg_parts[0], ($arg_parts[1] == 'mixed' ? SignalArgument::MIXED : $arg_parts[1])));
+		}
+	}
+
+	public function __toString() {
+		$str = $this->name;
+		$args = '';
+		if (!empty($this->arguments)) {
+			$first = true;
+			foreach ($this->arguments as $arg) {
+				if (!$first)
+					$args .= ', ';
+				$args .= $arg->type();
+				$first = false;
+			}
+		}
+		return sprintf("%s(%s)", $str, $args);
+	}
+
+	private $name;
+	private $listeners;
+	private $arguments;
+}
+
+/** Signal argument class */
+class SignalArgument {
+	const MIXED = 0xFF;
+
+	public function __construct($name, $type) {
+		$this->_name = $name;
+		$this->_type = $type;
+	}
+
+	public function validate(&$object) {
+		switch ($this->_type) {
+			case 'string':
+			case 'String': {
+				return is_string($object);
+			}
+			break;
+			case 'double':
+			case 'float':
+			case 'int': {
+				return is_numeric($object);
+			}
+			break;
+			case SignalArgument::MIXED: {
+				return true;
+			}
+			break;
+			default:
+				return is_a($object, $this->_type);
+		}
+	}
+
+	public function __toString() {
+		return (is_null($this->_name) ? '' : $this->_name .' ') . ($this->_type == self::MIXED ? 'mixed' : $this->_type);
+	}
+
+	public function name() {
+		return $this->_name;
+	}
+
+	public function type() {
+		return $this->_type;
+	}
+
+	private $_name;
+	private $_type;
+}
+
 /** Trait for object that want to emit signals or use slots */
 trait Signals {
 	

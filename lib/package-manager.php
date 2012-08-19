@@ -264,7 +264,7 @@ class Version {
 		if (($a->release != 0 && $b->release == 0) || ($a->release > $b->release))
 			return 1; 
 		// Safeguard
-		return 0;
+		return 0xFF;
 	}
 }
 
